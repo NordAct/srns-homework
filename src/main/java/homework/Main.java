@@ -8,6 +8,7 @@ import org.jzy3d.colors.Color;
 import org.jzy3d.colors.ColorMapper;
 import org.jzy3d.colors.colormaps.ColorMapRainbow;
 import org.jzy3d.maths.Coord3d;
+import org.jzy3d.painters.Font;
 import org.jzy3d.plot3d.builder.SurfaceBuilder;
 import org.jzy3d.plot3d.primitives.Shape;
 import org.jzy3d.plot3d.rendering.canvas.Quality;
@@ -30,7 +31,7 @@ public class Main {
     final static double SD_NOISE = 1; //СКО шума
     final static long FD = 33000000; //частота дискретизации
     final static long F0 = 8000000; //промежуточная частота
-    final static double T = 0.001; //интервал наблюдений
+    final static double T = 0.001; //интервал наблюдений (в секундах)
     final static double TD = 1d / FD; //интервал дескритезации
     final static int T_COUNT = 511; //кол-во символов в ДК
     final static double TC = T / T_COUNT; //длительность 1 символа ДК
@@ -40,8 +41,10 @@ public class Main {
     final static int FMAX = 2000; //макс. частота Доплера
     final static int F_POINTS = 9; //кол-во точек по оси частот (возможные значения доплеровской частоты)
     final static int T_POINTS = 1022; //кол-во точек по оси времени (возможные значения задержки)
-    final static double T_PER_POINT = T / T_POINTS;
+    final static double T_PER_POINT = T * 1000000d / T_POINTS; //переводим в мкс, т.к. программа не выносит маленькости велечины в системе СИ
     final static double F_PER_POINT = (double) (FMAX - FMIN) / F_POINTS;
+    static double[] fCoords = new double[F_POINTS];
+    static double[] tCoords = new double[T_POINTS];
 
     //порог обнаружения
     final static double H = 1; //отношение априорных вероятностей
@@ -50,7 +53,7 @@ public class Main {
     final static double HE = Math.log((1 + QE) * H) * ((TE * SD_NOISE*SD_NOISE * (1 + QE)) / (QE * TD)); //порог обнаружения
 
     public static void main(String[] args) {
-        long startTime = System.nanoTime();
+        long processingStartTime = System.nanoTime();
         System.out.println("Please wait, this might take a while");
         //Чтение файлов
         List<Integer> input = processFile(FILE);
@@ -60,15 +63,17 @@ public class Main {
         double[][] values = new double[T_POINTS][F_POINTS];
         int overThreshold = 0; //счетчик превышения порога
 
+        for (int i = 0; i < T_POINTS; i++) tCoords[i] = i * T_PER_POINT;
+        for (int i = 0; i < F_POINTS; i++) fCoords[i] = (i - (int) (F_POINTS / 2)) * F_PER_POINT;
 
         for (int i = 0; i < T_POINTS; i++) {
             for (int j = 0; j < F_POINTS; j++) {
                 double iVal = 0;
                 double qVal = 0;
                 for (int k = 0; k < input.size(); k++) {
-                    int pos = (int) ((k * TD + T_PER_POINT * i) / TC) % T_COUNT;
-                    double cos = l1of.get(pos) * Math.cos(2 * Math.PI * (F0 + F_PER_POINT * j) * k * TD);
-                    double sin = l1of.get(pos) * Math.sin(2 * Math.PI * (F0 + F_PER_POINT * j) * k * TD);
+                    int pos = (int) ((k * TD + tCoords[i] / 1000000d) / TC) % T_COUNT;
+                    double cos = l1of.get(pos) * Math.cos(2 * Math.PI * (F0 + fCoords[j]) * k * TD);
+                    double sin = l1of.get(pos) * Math.sin(2 * Math.PI * (F0 + fCoords[j]) * k * TD);
 
                     iVal += sin * input.get(k);
                     qVal += cos * input.get(k);
@@ -77,7 +82,8 @@ public class Main {
                 if (values[i][j] >= HE) overThreshold++;
             }
         }
-        System.out.printf("Processing was completed in %s ms\n", (System.nanoTime() - startTime) / 1000000d);
+        long plotDisplayStartTime = System.nanoTime();
+        System.out.printf("Processing was completed in %s ms\n", (System.nanoTime() - processingStartTime) / 1000000d);
 
         Plot plot = new Plot(values);
         try {
@@ -86,6 +92,7 @@ public class Main {
             System.out.println("Failed to open plot graph");
             throw new RuntimeException(e);
         }
+        System.out.printf("Plot window was created in %s ms\n", (System.nanoTime() - plotDisplayStartTime) / 1000000d);
     }
 
     private static List<Integer> processFile(String file) {
@@ -122,27 +129,31 @@ public class Main {
 
         @Override
         public void init(){
-            // Define a function to plot
+            //Задаем координаты
             List<Coord3d> coords = new ArrayList<>();
             for (int i = 0; i < T_POINTS; i++) {
                 for (int j = 0; j < F_POINTS; j++) {
-                    coords.add(new Coord3d(i * T_PER_POINT, j * F_POINTS, values[i][j]));
+                    coords.add(new Coord3d(tCoords[i] ,fCoords[j], values[i][j]));
                 }
             }
 
-            // Create the object to represent the function over the given range.
+            //Задаем настройки отрисовки
             final Shape surface = new SurfaceBuilder().delaunay(coords);
-            surface.setColorMapper(new ColorMapper(new ColorMapRainbow(), surface, new Color(1, 1, 1, .5f)));
+            surface.setColorMapper(new ColorMapper(new ColorMapRainbow(), surface));
             surface.setFaceDisplayed(true);
+            surface.setPolygonOffsetFillEnable(true);
             surface.setWireframeDisplayed(true);
+            surface.setWireframeWidth(0.1f);
             surface.setWireframeColor(Color.BLACK);
 
-            // Create a chart
-            //GLCapabilities c = new GLCapabilities(GLProfile.get(GLProfile.GL3));
-            //IPainterFactory p = new AWTPainterFactory(c);
+            //рисуем график
             IChartFactory f = new AWTChartFactory();
-
-            chart = f.newChart(Quality.Advanced().setHiDPIEnabled(true));
+            chart = f.newChart(Quality.Nicest().setAlphaActivated(false)); //отключаем прозрачность, т.к. она сломана
+            //поддерживаются только символы из англ. раскладки
+            chart.getAxisLayout().setXAxisLabel("t, us");
+            chart.getAxisLayout().setYAxisLabel("fd, Hz");
+            chart.getAxisLayout().setZAxisLabel("Parrots");
+            chart.getAxisLayout().setFont(Font.Helvetica_18);
             chart.getScene().getGraph().add(surface);
         }
     }
