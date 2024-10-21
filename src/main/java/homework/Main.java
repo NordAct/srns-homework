@@ -43,8 +43,8 @@ public class Main {
     final static int T_POINTS = 1022; //кол-во точек по оси времени (возможные значения задержки)
     final static double T_PER_POINT = T * 1000000d / T_POINTS; //переводим в мкс, т.к. программа не выносит маленькости велечины в системе СИ
     final static double F_PER_POINT = (double) (FMAX - FMIN) / F_POINTS;
-    static double[] fCoords = new double[F_POINTS];
-    static double[] tCoords = new double[T_POINTS];
+    final static double[] F_VALUES = new double[F_POINTS];
+    final static double[] T_VALUES = new double[T_POINTS];
 
     //порог обнаружения
     final static double H = 1; //отношение априорных вероятностей
@@ -63,17 +63,17 @@ public class Main {
         double[][] values = new double[T_POINTS][F_POINTS];
         int overThreshold = 0; //счетчик превышения порога
 
-        for (int i = 0; i < T_POINTS; i++) tCoords[i] = i * T_PER_POINT;
-        for (int i = 0; i < F_POINTS; i++) fCoords[i] = (i - (int) (F_POINTS / 2)) * F_PER_POINT;
+        for (int i = 0; i < T_POINTS; i++) T_VALUES[i] = i * T_PER_POINT;
+        for (int i = 0; i < F_POINTS; i++) F_VALUES[i] = (i - (int) (F_POINTS / 2)) * F_PER_POINT;
 
         for (int i = 0; i < T_POINTS; i++) {
             for (int j = 0; j < F_POINTS; j++) {
                 double iVal = 0;
                 double qVal = 0;
                 for (int k = 0; k < input.size(); k++) {
-                    int pos = (int) ((k * TD + tCoords[i] / 1000000d) / TC) % T_COUNT;
-                    double cos = l1of.get(pos) * Math.cos(2 * Math.PI * (F0 + fCoords[j]) * k * TD);
-                    double sin = l1of.get(pos) * Math.sin(2 * Math.PI * (F0 + fCoords[j]) * k * TD);
+                    int pos = (int) ((k * TD + T_VALUES[i] / 1000000d) / TC) % T_COUNT;
+                    double cos = l1of.get(pos) * Math.cos(2 * Math.PI * (F0 + F_VALUES[j]) * k * TD);
+                    double sin = l1of.get(pos) * Math.sin(2 * Math.PI * (F0 + F_VALUES[j]) * k * TD);
 
                     iVal += sin * input.get(k);
                     qVal += cos * input.get(k);
@@ -93,6 +93,29 @@ public class Main {
             throw new RuntimeException(e);
         }
         System.out.printf("Plot window was created in %s ms\n", (System.nanoTime() - plotDisplayStartTime) / 1000000d);
+
+        double max = Double.MIN_VALUE;
+        int xMax = 0;
+        int yMax = 0;
+        for (int i = 0; i < values.length; i++) {
+            for (int j = 0; j < values[0].length; j++) {
+                if (max < values[i][j]) {
+                    max = values[i][j];
+                    xMax = i;
+                    yMax = j;
+                }
+            }
+        }
+
+        System.out.println("------------------------------------");
+        System.out.printf("Max correlation value: %s\n", max);
+
+        System.out.printf("Delay value: %s ms\n", T_VALUES[xMax] / 1000d);
+        System.out.printf("Doppler value: %s Hz\n", F_VALUES[yMax]);
+
+        System.out.printf("Over threshold values amount: %s\n", overThreshold);
+        System.out.printf("False alarm chance: %s \n", (double) overThreshold/(T_POINTS * F_POINTS));
+        System.out.println("------------------------------------");
     }
 
     private static List<Integer> processFile(String file) {
@@ -133,7 +156,7 @@ public class Main {
             List<Coord3d> coords = new ArrayList<>();
             for (int i = 0; i < T_POINTS; i++) {
                 for (int j = 0; j < F_POINTS; j++) {
-                    coords.add(new Coord3d(tCoords[i] ,fCoords[j], values[i][j]));
+                    coords.add(new Coord3d(T_VALUES[i] , F_VALUES[j], values[i][j]));
                 }
             }
 
@@ -143,10 +166,10 @@ public class Main {
             surface.setFaceDisplayed(true);
             surface.setPolygonOffsetFillEnable(true);
             surface.setWireframeDisplayed(true);
-            surface.setWireframeWidth(0.1f);
+            surface.setWireframeWidth(0.05f);
             surface.setWireframeColor(Color.BLACK);
 
-            //рисуем график
+            //Рисуем график
             IChartFactory f = new AWTChartFactory();
             chart = f.newChart(Quality.Nicest().setAlphaActivated(false)); //отключаем прозрачность, т.к. она сломана
             //поддерживаются только символы из англ. раскладки
