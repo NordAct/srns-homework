@@ -1,12 +1,16 @@
 package homework;
 
-import org.jzy3d.chart.AWTChart;
+import org.jzy3d.analysis.AWTAbstractAnalysis;
+import org.jzy3d.analysis.AnalysisLauncher;
 import org.jzy3d.chart.factories.AWTChartFactory;
+import org.jzy3d.chart.factories.IChartFactory;
 import org.jzy3d.colors.Color;
-import org.jzy3d.plot2d.primitives.LineSerie2d;
-import org.jzy3d.plot3d.rendering.legends.overlay.Legend;
-import org.jzy3d.plot3d.rendering.legends.overlay.LegendLayout;
-import org.jzy3d.plot3d.rendering.legends.overlay.OverlayLegendRenderer;
+import org.jzy3d.colors.ColorMapper;
+import org.jzy3d.colors.colormaps.ColorMapRainbow;
+import org.jzy3d.maths.Coord3d;
+import org.jzy3d.plot3d.builder.SurfaceBuilder;
+import org.jzy3d.plot3d.primitives.Shape;
+import org.jzy3d.plot3d.rendering.canvas.Quality;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -15,74 +19,131 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 
 public class Main {
+    //пути к файлам
     final static String FILE = "/Yvar14.txt";
+    final static String L1OF = "/DK_LxOF.txt";
+
+    //исходные данные
+    final static double SD = 0.06; //СКО сигнала
+    final static double SD_NOISE = 1; //СКО шума
+    final static long FD = 33000000; //частота дискретизации
+    final static long F0 = 8000000; //промежуточная частота
+    final static double T = 0.001; //интервал наблюдений
+    final static double TD = 1d / FD; //интервал дескритезации
+    final static int T_COUNT = 511; //кол-во символов в ДК
+    final static double TC = T / T_COUNT; //длительность 1 символа ДК
+
+    //для графика
+    final static int FMIN = -2000; //мин. частота Доплера
+    final static int FMAX = 2000; //макс. частота Доплера
+    final static int F_POINTS = 9; //кол-во точек по оси частот (возможные значения доплеровской частоты)
+    final static int T_POINTS = 1022; //кол-во точек по оси времени (возможные значения задержки)
+    final static double T_PER_POINT = T / T_POINTS;
+    final static double F_PER_POINT = (double) (FMAX - FMIN) / F_POINTS;
+
+    //порог обнаружения
+    final static double H = 1; //отношение априорных вероятностей
+    final static double TE = T; //эффективная длительность сигнала
+    final static double QE = (TE * SD*SD) / (2 * SD_NOISE*SD_NOISE * TD); //отношение сигнал/шум
+    final static double HE = Math.log((1 + QE) * H) * ((TE * SD_NOISE*SD_NOISE * (1 + QE)) / (QE * TD)); //порог обнаружения
 
     public static void main(String[] args) {
-        System.out.println("hehe");
+        long startTime = System.nanoTime();
+        System.out.println("Please wait, this might take a while");
+        //Чтение файлов
+        List<Integer> input = processFile(FILE);
+        List<Integer> l1of = processFile(L1OF);
 
-        //InputStream inputStream = Main.class.getResourceAsStream(FILE);
-        //if (inputStream == null) {
-        //    System.out.printf("Failed to load file (%s)%n", FILE);
-        //    return;
-        //}
-//
-        //InputStreamReader streamReader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
-        //BufferedReader reader = new BufferedReader(streamReader);
-        //try {
-        //    for (String line; (line = reader.readLine()) != null;) {
-        //        System.out.println(line);
-        //    }
-        //} catch (IOException exception) {
-        //    System.out.printf("%s: failed to read line%n", exception.getMessage());
-        //}
+        //Обработка
+        double[][] values = new double[T_POINTS][F_POINTS];
+        int overThreshold = 0; //счетчик превышения порога
 
-        AWTChartFactory f = new AWTChartFactory();
-        AWTChart chart = (AWTChart) f.newChart();
 
-        // Add 2D series
-        LineSerie2d line1 = new LineSerie2d("Line 1");
-        LineSerie2d line2 = new LineSerie2d("Line 2");
-        LineSerie2d line3 = new LineSerie2d("Line 3 with a longer name");
+        for (int i = 0; i < T_POINTS; i++) {
+            for (int j = 0; j < F_POINTS; j++) {
+                double iVal = 0;
+                double qVal = 0;
+                for (int k = 0; k < input.size(); k++) {
+                    int pos = (int) ((k * TD + T_PER_POINT * i) / TC) % T_COUNT;
+                    double cos = l1of.get(pos) * Math.cos(2 * Math.PI * (F0 + F_PER_POINT * j) * k * TD);
+                    double sin = l1of.get(pos) * Math.sin(2 * Math.PI * (F0 + F_PER_POINT * j) * k * TD);
 
-        line1.setColor(Color.RED);
-        line2.setColor(Color.BLUE);
-        line3.setColor(Color.GREEN);
+                    iVal += sin * input.get(k);
+                    qVal += cos * input.get(k);
+                }
+                values[i][j] = iVal * iVal + qVal * qVal;
+                if (values[i][j] >= HE) overThreshold++;
+            }
+        }
+        System.out.printf("Processing was completed in %s ms\n", (System.nanoTime() - startTime) / 1000000d);
 
-        Random rng = new Random();
-        rng.setSeed(0);
+        Plot plot = new Plot(values);
+        try {
+            AnalysisLauncher.open(plot);
+        } catch (Exception e) {
+            System.out.println("Failed to open plot graph");
+            throw new RuntimeException(e);
+        }
+    }
 
-        for (int i = 0; i < 30; i++) {
-            line1.add(i, rng.nextDouble());
-            line2.add(i, rng.nextDouble());
-            line3.add(i, rng.nextDouble());
+    private static List<Integer> processFile(String file) {
+        InputStream inputStream = Main.class.getResourceAsStream(file);
+        if (inputStream == null) {
+            System.out.printf("Failed to load file \"%s\"%n", file);
+            return List.of();
+        }
+        InputStreamReader streamReader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
+        BufferedReader reader = new BufferedReader(streamReader);
+        List<Integer> inputData = new ArrayList<>();
+        try {
+            for (String line; (line = reader.readLine()) != null;) {
+                line = line.replaceAll("[^a-zA-Z0-9-]", "");
+                int val = Integer.parseInt(line);
+                inputData.add(val);
+            }
+        } catch (IOException e) {
+            System.out.printf("%s: failed to read line%n", e.getMessage());
+        }
+        try {
+            inputStream.close();
+        } catch (IOException e) {
+            System.out.printf("%s: failed to process file \"%s\"%n", e.getMessage(), file);
+        }
+        return inputData;
+    }
+
+    private static class Plot extends AWTAbstractAnalysis {
+        final double[][] values;
+        private Plot(double[][] values) {
+            this.values = values;
         }
 
-        chart.add(line1.getDrawable());
-        chart.add(line2.getDrawable());
-        chart.add(line3.getDrawable());
+        @Override
+        public void init(){
+            // Define a function to plot
+            List<Coord3d> coords = new ArrayList<>();
+            for (int i = 0; i < T_POINTS; i++) {
+                for (int j = 0; j < F_POINTS; j++) {
+                    coords.add(new Coord3d(i * T_PER_POINT, j * F_POINTS, values[i][j]));
+                }
+            }
 
+            // Create the object to represent the function over the given range.
+            final Shape surface = new SurfaceBuilder().delaunay(coords);
+            surface.setColorMapper(new ColorMapper(new ColorMapRainbow(), surface, new Color(1, 1, 1, .5f)));
+            surface.setFaceDisplayed(true);
+            surface.setWireframeDisplayed(true);
+            surface.setWireframeColor(Color.BLACK);
 
-        // Legend
-        List<Legend> infos = new ArrayList<Legend>();
-        infos.add(new Legend(line1.getName(), line1.getColor()));
-        infos.add(new Legend(line2.getName(), line2.getColor()));
-        infos.add(new Legend(line3.getName(), line3.getColor()));
+            // Create a chart
+            //GLCapabilities c = new GLCapabilities(GLProfile.get(GLProfile.GL3));
+            //IPainterFactory p = new AWTPainterFactory(c);
+            IChartFactory f = new AWTChartFactory();
 
-        OverlayLegendRenderer legend = new OverlayLegendRenderer(infos);
-        LegendLayout layout = legend.getLayout();
-
-        layout.boxMarginX = 10;
-        layout.boxMarginY = 10;
-        layout.backgroundColor = Color.WHITE;
-        layout.font = new java.awt.Font("Helvetica", java.awt.Font.PLAIN, 11);
-
-        chart.addRenderer(legend);
-
-        // Open as 2D chart
-        chart.view2d();
-        chart.open();
+            chart = f.newChart(Quality.Advanced().setHiDPIEnabled(true));
+            chart.getScene().getGraph().add(surface);
+        }
     }
 }
