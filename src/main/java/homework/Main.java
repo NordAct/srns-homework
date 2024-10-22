@@ -37,14 +37,13 @@ public class Main {
     final static double TC = T / T_COUNT; //длительность 1 символа ДК
 
     //для графика
-    final static int FMIN = -2000; //мин. частота Доплера
-    final static int FMAX = 2000; //макс. частота Доплера
+    final static int F_SEARCH_WIDTH = 2000 * 2; //ширина области поиска частоты Доплера
     final static int F_POINTS = 9; //кол-во точек по оси частот (возможные значения доплеровской частоты)
-    final static int T_POINTS = 1022; //кол-во точек по оси времени (возможные значения задержки)
+    final static int T_POINTS = 1022; //кол-во точек по оси времени
     final static double T_PER_POINT = T * 1000000d / T_POINTS; //переводим в мкс, т.к. программа не выносит маленькости велечины в системе СИ
-    final static double F_PER_POINT = (double) (FMAX - FMIN) / F_POINTS;
-    final static double[] F_VALUES = new double[F_POINTS];
-    final static double[] T_VALUES = new double[T_POINTS];
+    final static double F_PER_POINT = (double) F_SEARCH_WIDTH / F_POINTS;
+    final static double[] F_VALUES = new double[F_POINTS]; //возможные значения доплеровской частоты (заполняются в ходе выполнения)
+    final static double[] T_VALUES = new double[T_POINTS]; //возможные значения задержки (заполняются в ходе выполнения)
 
     //порог обнаружения
     final static double H = 1; //отношение априорных вероятностей
