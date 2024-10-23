@@ -112,6 +112,7 @@ public class Main {
         System.out.printf("Delay value: %s ms\n", T_VALUES[xMax] / 1000d);
         System.out.printf("Doppler value: %s Hz\n", F_VALUES[yMax]);
 
+        System.out.printf("Threshold: %s\n", HE);
         System.out.printf("Over threshold values amount: %s\n", overThreshold);
         System.out.printf("False alarm chance: %s \n", (double) overThreshold/(T_POINTS * F_POINTS));
         System.out.println("------------------------------------");
